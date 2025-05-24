@@ -20,9 +20,11 @@ func SetupRoutes(r *gin.Engine, noteHandler *handlers.NoteHandler, actionHandler
 	actions := r.Group("/api/actions")
 	{
 		actions.POST("", actionHandler.Create)
+		actions.GET("", actionHandler.GetAll)
 		actions.GET("/:id", actionHandler.GetByID)
 		actions.GET("/note/:note_id", actionHandler.GetByNoteID)
 		actions.PUT("/:id", actionHandler.Update)
 		actions.DELETE("/:id", actionHandler.Delete)
+		actions.HEAD("", actionHandler.Health)
 	}
 }
