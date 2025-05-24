@@ -11,13 +11,24 @@ import (
 	"github.com/tehsis/logmeup-api/internal/repository"
 )
 
-type ActionHandler struct {
-	repo *repository.ActionRepository
+// WebSocketHub interface for broadcasting
+type WebSocketHub interface {
+	BroadcastActionCreated(action *models.Action)
+	BroadcastActionUpdated(action *models.Action)
+	BroadcastActionDeleted(actionID int64)
 }
 
-func NewActionHandler(repo *repository.ActionRepository) *ActionHandler {
-	log.Printf("[ActionHandler] Initializing action handler")
-	return &ActionHandler{repo: repo}
+type ActionHandler struct {
+	repo *repository.ActionRepository
+	hub  WebSocketHub
+}
+
+func NewActionHandler(repo *repository.ActionRepository, hub WebSocketHub) *ActionHandler {
+	log.Printf("[ActionHandler] Initializing action handler with WebSocket support")
+	return &ActionHandler{
+		repo: repo,
+		hub:  hub,
+	}
 }
 
 // Helper function to log request details
@@ -80,6 +91,8 @@ func (h *ActionHandler) Create(c *gin.Context) {
 		"note_id":     action.NoteID,
 		"description": action.Description,
 	})
+
+	h.hub.BroadcastActionCreated(action)
 
 	c.JSON(http.StatusCreated, action)
 }
@@ -217,6 +230,8 @@ func (h *ActionHandler) Update(c *gin.Context) {
 		"updated_at": action.UpdatedAt,
 	})
 
+	h.hub.BroadcastActionUpdated(action)
+
 	c.JSON(http.StatusOK, action)
 }
 
@@ -246,6 +261,8 @@ func (h *ActionHandler) Delete(c *gin.Context) {
 	logSuccess(c, "Delete", "Action deleted successfully", map[string]interface{}{
 		"action_id": id,
 	})
+
+	h.hub.BroadcastActionDeleted(id)
 
 	c.Status(http.StatusNoContent)
 }

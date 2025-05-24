@@ -5,7 +5,15 @@ import (
 	"github.com/tehsis/logmeup-api/internal/handlers"
 )
 
-func SetupRoutes(r *gin.Engine, noteHandler *handlers.NoteHandler, actionHandler *handlers.ActionHandler) {
+// WebSocketHub interface for the hub
+type WebSocketHub interface {
+	HandleWebSocket(c *gin.Context)
+}
+
+func SetupRoutes(r *gin.Engine, noteHandler *handlers.NoteHandler, actionHandler *handlers.ActionHandler, wsHub WebSocketHub) {
+	// WebSocket endpoint
+	r.GET("/ws", wsHub.HandleWebSocket)
+
 	// Notes routes
 	notes := r.Group("/api/notes")
 	{
