@@ -15,23 +15,25 @@ func NewNoteRepository(db *sql.DB) *NoteRepository {
 	return &NoteRepository{db: db}
 }
 
-func (r *NoteRepository) Create(note *models.CreateNoteRequest) (*models.Note, error) {
+func (r *NoteRepository) Create(userID string, note *models.CreateNoteRequest) (*models.Note, error) {
 	query := `
-		INSERT INTO notes (content, date, created_at, updated_at)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, content, date, created_at, updated_at
+		INSERT INTO notes (user_id, content, date, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, user_id, content, date, created_at, updated_at
 	`
 
 	now := time.Now()
 	var createdNote models.Note
 	err := r.db.QueryRow(
 		query,
+		userID,
 		note.Content,
 		note.Date,
 		now,
 		now,
 	).Scan(
 		&createdNote.ID,
+		&createdNote.UserID,
 		&createdNote.Content,
 		&createdNote.Date,
 		&createdNote.CreatedAt,
@@ -45,16 +47,17 @@ func (r *NoteRepository) Create(note *models.CreateNoteRequest) (*models.Note, e
 	return &createdNote, nil
 }
 
-func (r *NoteRepository) GetByID(id int64) (*models.Note, error) {
+func (r *NoteRepository) GetByID(userID string, id int64) (*models.Note, error) {
 	query := `
-		SELECT id, content, date, created_at, updated_at
+		SELECT id, user_id, content, date, created_at, updated_at
 		FROM notes
-		WHERE id = $1
+		WHERE id = $1 AND user_id = $2
 	`
 
 	var note models.Note
-	err := r.db.QueryRow(query, id).Scan(
+	err := r.db.QueryRow(query, id, userID).Scan(
 		&note.ID,
+		&note.UserID,
 		&note.Content,
 		&note.Date,
 		&note.CreatedAt,
@@ -68,15 +71,15 @@ func (r *NoteRepository) GetByID(id int64) (*models.Note, error) {
 	return &note, nil
 }
 
-func (r *NoteRepository) GetByDate(date time.Time) ([]*models.Note, error) {
+func (r *NoteRepository) GetByDate(userID string, date time.Time) ([]*models.Note, error) {
 	query := `
-		SELECT id, content, date, created_at, updated_at
+		SELECT id, user_id, content, date, created_at, updated_at
 		FROM notes
-		WHERE date = $1
+		WHERE date = $1 AND user_id = $2
 		ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.Query(query, date)
+	rows, err := r.db.Query(query, date, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +90,7 @@ func (r *NoteRepository) GetByDate(date time.Time) ([]*models.Note, error) {
 		var note models.Note
 		err := rows.Scan(
 			&note.ID,
+			&note.UserID,
 			&note.Content,
 			&note.Date,
 			&note.CreatedAt,
@@ -101,12 +105,12 @@ func (r *NoteRepository) GetByDate(date time.Time) ([]*models.Note, error) {
 	return notes, nil
 }
 
-func (r *NoteRepository) Update(id int64, note *models.UpdateNoteRequest) (*models.Note, error) {
+func (r *NoteRepository) Update(userID string, id int64, note *models.UpdateNoteRequest) (*models.Note, error) {
 	query := `
 		UPDATE notes
 		SET content = $1, updated_at = $2
-		WHERE id = $3
-		RETURNING id, content, date, created_at, updated_at
+		WHERE id = $3 AND user_id = $4
+		RETURNING id, user_id, content, date, created_at, updated_at
 	`
 
 	now := time.Now()
@@ -116,8 +120,10 @@ func (r *NoteRepository) Update(id int64, note *models.UpdateNoteRequest) (*mode
 		note.Content,
 		now,
 		id,
+		userID,
 	).Scan(
 		&updatedNote.ID,
+		&updatedNote.UserID,
 		&updatedNote.Content,
 		&updatedNote.Date,
 		&updatedNote.CreatedAt,
@@ -131,8 +137,8 @@ func (r *NoteRepository) Update(id int64, note *models.UpdateNoteRequest) (*mode
 	return &updatedNote, nil
 }
 
-func (r *NoteRepository) Delete(id int64) error {
-	query := `DELETE FROM notes WHERE id = $1`
-	_, err := r.db.Exec(query, id)
+func (r *NoteRepository) Delete(userID string, id int64) error {
+	query := `DELETE FROM notes WHERE id = $1 AND user_id = $2`
+	_, err := r.db.Exec(query, id, userID)
 	return err
-} 
+}

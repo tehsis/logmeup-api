@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tehsis/logmeup-api/internal/middleware"
 	"github.com/tehsis/logmeup-api/internal/models"
 	"github.com/tehsis/logmeup-api/internal/repository"
 )
@@ -59,7 +60,13 @@ func logSuccess(c *gin.Context, operation string, details ...interface{}) {
 }
 
 func (h *ActionHandler) Create(c *gin.Context) {
-	logRequest(c, "Create", "Starting action creation")
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	logRequest(c, "Create", "Starting action creation for user", userID)
 
 	var req models.CreateActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -72,11 +79,12 @@ func (h *ActionHandler) Create(c *gin.Context) {
 	}
 
 	logRequest(c, "Create", "Request data", map[string]interface{}{
+		"user_id":     userID,
 		"note_id":     req.NoteID,
 		"description": req.Description,
 	})
 
-	action, err := h.repo.Create(&req)
+	action, err := h.repo.Create(userID, &req)
 	if err != nil {
 		logError(c, "Create", err, "Database creation failed", req)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -88,6 +96,7 @@ func (h *ActionHandler) Create(c *gin.Context) {
 
 	logSuccess(c, "Create", "Action created successfully", map[string]interface{}{
 		"action_id":   action.ID,
+		"user_id":     action.UserID,
 		"note_id":     action.NoteID,
 		"description": action.Description,
 	})
@@ -98,8 +107,14 @@ func (h *ActionHandler) Create(c *gin.Context) {
 }
 
 func (h *ActionHandler) GetByID(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	idParam := c.Param("id")
-	logRequest(c, "GetByID", "Fetching action by ID", idParam)
+	logRequest(c, "GetByID", "Fetching action by ID", idParam, "for user", userID)
 
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
@@ -111,9 +126,9 @@ func (h *ActionHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	action, err := h.repo.GetByID(id)
+	action, err := h.repo.GetByID(userID, id)
 	if err != nil {
-		logError(c, "GetByID", err, "Action not found in database", id)
+		logError(c, "GetByID", err, "Action not found in database", id, "for user", userID)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "action not found",
 			"code":  "NOT_FOUND",
@@ -123,6 +138,7 @@ func (h *ActionHandler) GetByID(c *gin.Context) {
 
 	logSuccess(c, "GetByID", "Action retrieved successfully", map[string]interface{}{
 		"action_id":   action.ID,
+		"user_id":     action.UserID,
 		"description": action.Description,
 		"completed":   action.Completed,
 	})
@@ -131,11 +147,17 @@ func (h *ActionHandler) GetByID(c *gin.Context) {
 }
 
 func (h *ActionHandler) GetAll(c *gin.Context) {
-	logRequest(c, "GetAll", "Fetching all actions")
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
 
-	actions, err := h.repo.GetAll()
+	logRequest(c, "GetAll", "Fetching all actions for user", userID)
+
+	actions, err := h.repo.GetAll(userID)
 	if err != nil {
-		logError(c, "GetAll", err, "Failed to retrieve actions from database")
+		logError(c, "GetAll", err, "Failed to retrieve actions from database for user", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 			"code":  "DATABASE_ERROR",
@@ -144,15 +166,22 @@ func (h *ActionHandler) GetAll(c *gin.Context) {
 	}
 
 	logSuccess(c, "GetAll", "Actions retrieved successfully", map[string]interface{}{
-		"count": len(actions),
+		"user_id": userID,
+		"count":   len(actions),
 	})
 
 	c.JSON(http.StatusOK, actions)
 }
 
 func (h *ActionHandler) GetByNoteID(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	noteIDParam := c.Param("note_id")
-	logRequest(c, "GetByNoteID", "Fetching actions by note ID", noteIDParam)
+	logRequest(c, "GetByNoteID", "Fetching actions by note ID", noteIDParam, "for user", userID)
 
 	noteID, err := strconv.ParseInt(noteIDParam, 10, 64)
 	if err != nil {
@@ -164,9 +193,9 @@ func (h *ActionHandler) GetByNoteID(c *gin.Context) {
 		return
 	}
 
-	actions, err := h.repo.GetByNoteID(noteID)
+	actions, err := h.repo.GetByNoteID(userID, noteID)
 	if err != nil {
-		logError(c, "GetByNoteID", err, "Failed to retrieve actions by note ID", noteID)
+		logError(c, "GetByNoteID", err, "Failed to retrieve actions by note ID", noteID, "for user", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 			"code":  "DATABASE_ERROR",
@@ -175,6 +204,7 @@ func (h *ActionHandler) GetByNoteID(c *gin.Context) {
 	}
 
 	logSuccess(c, "GetByNoteID", "Actions retrieved successfully", map[string]interface{}{
+		"user_id": userID,
 		"note_id": noteID,
 		"count":   len(actions),
 	})
@@ -183,8 +213,14 @@ func (h *ActionHandler) GetByNoteID(c *gin.Context) {
 }
 
 func (h *ActionHandler) Update(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	idParam := c.Param("id")
-	logRequest(c, "Update", "Starting action update", idParam)
+	logRequest(c, "Update", "Starting action update", idParam, "for user", userID)
 
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
@@ -198,7 +234,7 @@ func (h *ActionHandler) Update(c *gin.Context) {
 
 	var req models.UpdateActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logError(c, "Update", err, "Failed to bind JSON request", id)
+		logError(c, "Update", err, "Failed to bind JSON request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 			"code":  "INVALID_JSON",
@@ -206,17 +242,15 @@ func (h *ActionHandler) Update(c *gin.Context) {
 		return
 	}
 
-	logRequest(c, "Update", "Update data", map[string]interface{}{
+	logRequest(c, "Update", "Request data", map[string]interface{}{
+		"user_id":   userID,
 		"action_id": id,
 		"completed": req.Completed,
 	})
 
-	action, err := h.repo.Update(id, &req)
+	action, err := h.repo.Update(userID, id, &req)
 	if err != nil {
-		logError(c, "Update", err, "Database update failed", map[string]interface{}{
-			"action_id": id,
-			"completed": req.Completed,
-		})
+		logError(c, "Update", err, "Database update failed", id, "for user", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 			"code":  "DATABASE_ERROR",
@@ -225,9 +259,9 @@ func (h *ActionHandler) Update(c *gin.Context) {
 	}
 
 	logSuccess(c, "Update", "Action updated successfully", map[string]interface{}{
-		"action_id":  action.ID,
-		"completed":  action.Completed,
-		"updated_at": action.UpdatedAt,
+		"action_id": action.ID,
+		"user_id":   action.UserID,
+		"completed": action.Completed,
 	})
 
 	h.hub.BroadcastActionUpdated(action)
@@ -236,8 +270,14 @@ func (h *ActionHandler) Update(c *gin.Context) {
 }
 
 func (h *ActionHandler) Delete(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	idParam := c.Param("id")
-	logRequest(c, "Delete", "Starting action deletion", idParam)
+	logRequest(c, "Delete", "Starting action deletion", idParam, "for user", userID)
 
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
@@ -249,8 +289,8 @@ func (h *ActionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.repo.Delete(id); err != nil {
-		logError(c, "Delete", err, "Database deletion failed", id)
+	if err := h.repo.Delete(userID, id); err != nil {
+		logError(c, "Delete", err, "Database deletion failed", id, "for user", userID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 			"code":  "DATABASE_ERROR",
@@ -260,6 +300,7 @@ func (h *ActionHandler) Delete(c *gin.Context) {
 
 	logSuccess(c, "Delete", "Action deleted successfully", map[string]interface{}{
 		"action_id": id,
+		"user_id":   userID,
 	})
 
 	h.hub.BroadcastActionDeleted(id)
@@ -268,7 +309,11 @@ func (h *ActionHandler) Delete(c *gin.Context) {
 }
 
 func (h *ActionHandler) Health(c *gin.Context) {
-	logRequest(c, "Health", "Health check request")
-	logSuccess(c, "Health", "Health check successful")
-	c.Status(http.StatusOK)
+	logRequest(c, "Health", "Health check requested")
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC(),
+		"service":   "action-handler",
+	})
 }

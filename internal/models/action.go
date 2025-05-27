@@ -4,6 +4,7 @@ import "time"
 
 type Action struct {
 	ID          int64     `json:"id"`
+	UserID      string    `json:"user_id"`
 	NoteID      int64     `json:"note_id"`
 	Description string    `json:"description"`
 	Completed   bool      `json:"completed"`
@@ -18,4 +19,4 @@ type CreateActionRequest struct {
 
 type UpdateActionRequest struct {
 	Completed bool `json:"completed"`
-} 
+}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tehsis/logmeup-api/internal/middleware"
 	"github.com/tehsis/logmeup-api/internal/models"
 	"github.com/tehsis/logmeup-api/internal/repository"
 )
@@ -19,13 +20,19 @@ func NewNoteHandler(repo *repository.NoteRepository) *NoteHandler {
 }
 
 func (h *NoteHandler) Create(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	var req models.CreateNoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	note, err := h.repo.Create(&req)
+	note, err := h.repo.Create(userID, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -35,13 +42,19 @@ func (h *NoteHandler) Create(c *gin.Context) {
 }
 
 func (h *NoteHandler) GetByID(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 
-	note, err := h.repo.GetByID(id)
+	note, err := h.repo.GetByID(userID, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "note not found"})
 		return
@@ -51,6 +64,12 @@ func (h *NoteHandler) GetByID(c *gin.Context) {
 }
 
 func (h *NoteHandler) GetByDate(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	dateStr := c.Query("date")
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
@@ -58,7 +77,7 @@ func (h *NoteHandler) GetByDate(c *gin.Context) {
 		return
 	}
 
-	notes, err := h.repo.GetByDate(date)
+	notes, err := h.repo.GetByDate(userID, date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -68,6 +87,12 @@ func (h *NoteHandler) GetByDate(c *gin.Context) {
 }
 
 func (h *NoteHandler) Update(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
@@ -80,7 +105,7 @@ func (h *NoteHandler) Update(c *gin.Context) {
 		return
 	}
 
-	note, err := h.repo.Update(id, &req)
+	note, err := h.repo.Update(userID, id, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -90,16 +115,22 @@ func (h *NoteHandler) Update(c *gin.Context) {
 }
 
 func (h *NoteHandler) Delete(c *gin.Context) {
+	userID, exists := middleware.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
 
-	if err := h.repo.Delete(id); err != nil {
+	if err := h.repo.Delete(userID, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.Status(http.StatusNoContent)
-} 
+}

@@ -35,16 +35,17 @@ func logDBSuccess(operation string, details ...interface{}) {
 	log.Printf("[ActionRepository-%s-SUCCESS] %s | Details: %v", operation, timestamp, details)
 }
 
-func (r *ActionRepository) Create(action *models.CreateActionRequest) (*models.Action, error) {
+func (r *ActionRepository) Create(userID string, action *models.CreateActionRequest) (*models.Action, error) {
 	logDBOperation("Create", "Starting action creation", map[string]interface{}{
+		"user_id":     userID,
 		"note_id":     action.NoteID,
 		"description": action.Description,
 	})
 
 	query := `
-		INSERT INTO actions (note_id, description, completed, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, note_id, description, completed, created_at, updated_at
+		INSERT INTO actions (user_id, note_id, description, completed, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, user_id, note_id, description, completed, created_at, updated_at
 	`
 
 	now := time.Now()
@@ -54,6 +55,7 @@ func (r *ActionRepository) Create(action *models.CreateActionRequest) (*models.A
 
 	err := r.db.QueryRow(
 		query,
+		userID,
 		action.NoteID,
 		action.Description,
 		false,
@@ -61,6 +63,7 @@ func (r *ActionRepository) Create(action *models.CreateActionRequest) (*models.A
 		now,
 	).Scan(
 		&createdAction.ID,
+		&createdAction.UserID,
 		&createdAction.NoteID,
 		&createdAction.Description,
 		&createdAction.Completed,
@@ -70,6 +73,7 @@ func (r *ActionRepository) Create(action *models.CreateActionRequest) (*models.A
 
 	if err != nil {
 		logDBError("Create", err, "Failed to create action", map[string]interface{}{
+			"user_id":     userID,
 			"note_id":     action.NoteID,
 			"description": action.Description,
 		})
@@ -78,6 +82,7 @@ func (r *ActionRepository) Create(action *models.CreateActionRequest) (*models.A
 
 	logDBSuccess("Create", "Action created successfully", map[string]interface{}{
 		"action_id":   createdAction.ID,
+		"user_id":     createdAction.UserID,
 		"note_id":     createdAction.NoteID,
 		"description": createdAction.Description,
 	})
@@ -85,21 +90,22 @@ func (r *ActionRepository) Create(action *models.CreateActionRequest) (*models.A
 	return &createdAction, nil
 }
 
-func (r *ActionRepository) GetByID(id int64) (*models.Action, error) {
-	logDBOperation("GetByID", "Fetching action by ID", id)
+func (r *ActionRepository) GetByID(userID string, id int64) (*models.Action, error) {
+	logDBOperation("GetByID", "Fetching action by ID", id, "for user", userID)
 
 	query := `
-		SELECT id, note_id, description, completed, created_at, updated_at
+		SELECT id, user_id, note_id, description, completed, created_at, updated_at
 		FROM actions
-		WHERE id = $1
+		WHERE id = $1 AND user_id = $2
 	`
 
 	var action models.Action
 
-	logDBOperation("GetByID", "Executing SQL query", query, "ID:", id)
+	logDBOperation("GetByID", "Executing SQL query", query, "ID:", id, "UserID:", userID)
 
-	err := r.db.QueryRow(query, id).Scan(
+	err := r.db.QueryRow(query, id, userID).Scan(
 		&action.ID,
+		&action.UserID,
 		&action.NoteID,
 		&action.Description,
 		&action.Completed,
@@ -109,15 +115,16 @@ func (r *ActionRepository) GetByID(id int64) (*models.Action, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logDBError("GetByID", err, "Action not found", id)
+			logDBError("GetByID", err, "Action not found", id, "for user", userID)
 		} else {
-			logDBError("GetByID", err, "Database error while fetching action", id)
+			logDBError("GetByID", err, "Database error while fetching action", id, "for user", userID)
 		}
 		return nil, err
 	}
 
 	logDBSuccess("GetByID", "Action retrieved successfully", map[string]interface{}{
 		"action_id":   action.ID,
+		"user_id":     action.UserID,
 		"description": action.Description,
 		"completed":   action.Completed,
 	})
@@ -125,20 +132,21 @@ func (r *ActionRepository) GetByID(id int64) (*models.Action, error) {
 	return &action, nil
 }
 
-func (r *ActionRepository) GetAll() ([]*models.Action, error) {
-	logDBOperation("GetAll", "Fetching all actions")
+func (r *ActionRepository) GetAll(userID string) ([]*models.Action, error) {
+	logDBOperation("GetAll", "Fetching all actions for user", userID)
 
 	query := `
-		SELECT id, note_id, description, completed, created_at, updated_at
+		SELECT id, user_id, note_id, description, completed, created_at, updated_at
 		FROM actions
+		WHERE user_id = $1
 		ORDER BY created_at DESC
 	`
 
-	logDBOperation("GetAll", "Executing SQL query", query)
+	logDBOperation("GetAll", "Executing SQL query", query, "UserID:", userID)
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.Query(query, userID)
 	if err != nil {
-		logDBError("GetAll", err, "Failed to execute query")
+		logDBError("GetAll", err, "Failed to execute query for user", userID)
 		return nil, err
 	}
 	defer rows.Close()
@@ -148,6 +156,7 @@ func (r *ActionRepository) GetAll() ([]*models.Action, error) {
 		var action models.Action
 		err := rows.Scan(
 			&action.ID,
+			&action.UserID,
 			&action.NoteID,
 			&action.Description,
 			&action.Completed,
@@ -155,39 +164,40 @@ func (r *ActionRepository) GetAll() ([]*models.Action, error) {
 			&action.UpdatedAt,
 		)
 		if err != nil {
-			logDBError("GetAll", err, "Failed to scan action row")
+			logDBError("GetAll", err, "Failed to scan action row for user", userID)
 			return nil, err
 		}
 		actions = append(actions, &action)
 	}
 
 	if err = rows.Err(); err != nil {
-		logDBError("GetAll", err, "Error occurred during row iteration")
+		logDBError("GetAll", err, "Error occurred during row iteration for user", userID)
 		return nil, err
 	}
 
 	logDBSuccess("GetAll", "Actions retrieved successfully", map[string]interface{}{
-		"count": len(actions),
+		"user_id": userID,
+		"count":   len(actions),
 	})
 
 	return actions, nil
 }
 
-func (r *ActionRepository) GetByNoteID(noteID int64) ([]*models.Action, error) {
-	logDBOperation("GetByNoteID", "Fetching actions by note ID", noteID)
+func (r *ActionRepository) GetByNoteID(userID string, noteID int64) ([]*models.Action, error) {
+	logDBOperation("GetByNoteID", "Fetching actions by note ID", noteID, "for user", userID)
 
 	query := `
-		SELECT id, note_id, description, completed, created_at, updated_at
+		SELECT id, user_id, note_id, description, completed, created_at, updated_at
 		FROM actions
-		WHERE note_id = $1
+		WHERE note_id = $1 AND user_id = $2
 		ORDER BY created_at DESC
 	`
 
-	logDBOperation("GetByNoteID", "Executing SQL query", query, "Note ID:", noteID)
+	logDBOperation("GetByNoteID", "Executing SQL query", query, "Note ID:", noteID, "UserID:", userID)
 
-	rows, err := r.db.Query(query, noteID)
+	rows, err := r.db.Query(query, noteID, userID)
 	if err != nil {
-		logDBError("GetByNoteID", err, "Failed to execute query", noteID)
+		logDBError("GetByNoteID", err, "Failed to execute query", noteID, "for user", userID)
 		return nil, err
 	}
 	defer rows.Close()
@@ -197,6 +207,7 @@ func (r *ActionRepository) GetByNoteID(noteID int64) ([]*models.Action, error) {
 		var action models.Action
 		err := rows.Scan(
 			&action.ID,
+			&action.UserID,
 			&action.NoteID,
 			&action.Description,
 			&action.Completed,
@@ -204,18 +215,19 @@ func (r *ActionRepository) GetByNoteID(noteID int64) ([]*models.Action, error) {
 			&action.UpdatedAt,
 		)
 		if err != nil {
-			logDBError("GetByNoteID", err, "Failed to scan action row", noteID)
+			logDBError("GetByNoteID", err, "Failed to scan action row", noteID, "for user", userID)
 			return nil, err
 		}
 		actions = append(actions, &action)
 	}
 
 	if err = rows.Err(); err != nil {
-		logDBError("GetByNoteID", err, "Error occurred during row iteration", noteID)
+		logDBError("GetByNoteID", err, "Error occurred during row iteration", noteID, "for user", userID)
 		return nil, err
 	}
 
 	logDBSuccess("GetByNoteID", "Actions retrieved successfully", map[string]interface{}{
+		"user_id": userID,
 		"note_id": noteID,
 		"count":   len(actions),
 	})
@@ -223,8 +235,9 @@ func (r *ActionRepository) GetByNoteID(noteID int64) ([]*models.Action, error) {
 	return actions, nil
 }
 
-func (r *ActionRepository) Update(id int64, action *models.UpdateActionRequest) (*models.Action, error) {
-	logDBOperation("Update", "Updating action", map[string]interface{}{
+func (r *ActionRepository) Update(userID string, id int64, action *models.UpdateActionRequest) (*models.Action, error) {
+	logDBOperation("Update", "Starting action update", map[string]interface{}{
+		"user_id":   userID,
 		"action_id": id,
 		"completed": action.Completed,
 	})
@@ -232,8 +245,8 @@ func (r *ActionRepository) Update(id int64, action *models.UpdateActionRequest) 
 	query := `
 		UPDATE actions
 		SET completed = $1, updated_at = $2
-		WHERE id = $3
-		RETURNING id, note_id, description, completed, created_at, updated_at
+		WHERE id = $3 AND user_id = $4
+		RETURNING id, user_id, note_id, description, completed, created_at, updated_at
 	`
 
 	now := time.Now()
@@ -246,8 +259,10 @@ func (r *ActionRepository) Update(id int64, action *models.UpdateActionRequest) 
 		action.Completed,
 		now,
 		id,
+		userID,
 	).Scan(
 		&updatedAction.ID,
+		&updatedAction.UserID,
 		&updatedAction.NoteID,
 		&updatedAction.Description,
 		&updatedAction.Completed,
@@ -257,52 +272,54 @@ func (r *ActionRepository) Update(id int64, action *models.UpdateActionRequest) 
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logDBError("Update", err, "Action not found for update", id)
+			logDBError("Update", err, "Action not found for update", id, "for user", userID)
 		} else {
-			logDBError("Update", err, "Database error while updating action", map[string]interface{}{
-				"action_id": id,
-				"completed": action.Completed,
-			})
+			logDBError("Update", err, "Failed to update action", id, "for user", userID)
 		}
 		return nil, err
 	}
 
 	logDBSuccess("Update", "Action updated successfully", map[string]interface{}{
-		"action_id":  updatedAction.ID,
-		"completed":  updatedAction.Completed,
-		"updated_at": updatedAction.UpdatedAt,
+		"action_id": updatedAction.ID,
+		"user_id":   updatedAction.UserID,
+		"completed": updatedAction.Completed,
 	})
 
 	return &updatedAction, nil
 }
 
-func (r *ActionRepository) Delete(id int64) error {
-	logDBOperation("Delete", "Deleting action", id)
+func (r *ActionRepository) Delete(userID string, id int64) error {
+	logDBOperation("Delete", "Starting action deletion", map[string]interface{}{
+		"user_id":   userID,
+		"action_id": id,
+	})
 
-	query := `DELETE FROM actions WHERE id = $1`
+	query := `DELETE FROM actions WHERE id = $1 AND user_id = $2`
 
-	logDBOperation("Delete", "Executing SQL query", query, "ID:", id)
+	logDBOperation("Delete", "Executing SQL query", query)
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.Exec(query, id, userID)
 	if err != nil {
-		logDBError("Delete", err, "Database error while deleting action", id)
+		logDBError("Delete", err, "Failed to delete action", id, "for user", userID)
 		return err
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		logDBError("Delete", err, "Error checking rows affected", id)
+		logDBError("Delete", err, "Failed to get rows affected", id, "for user", userID)
 		return err
 	}
 
 	if rowsAffected == 0 {
-		logDBOperation("Delete", "No action found to delete", id)
-	} else {
-		logDBSuccess("Delete", "Action deleted successfully", map[string]interface{}{
-			"action_id":     id,
-			"rows_affected": rowsAffected,
-		})
+		logDBError("Delete", nil, "No action found to delete", id, "for user", userID)
+		return sql.ErrNoRows
 	}
+
+	logDBSuccess("Delete", "Action deleted successfully", map[string]interface{}{
+		"action_id":     id,
+		"user_id":       userID,
+		"rows_affected": rowsAffected,
+	})
 
 	return nil
 }
